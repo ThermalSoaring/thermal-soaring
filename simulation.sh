@@ -12,14 +12,12 @@
 #
 #   mavlink
 #        $ git clone https://github.com/mavlink/mavlink
+#        $ cd mavlink/pymavlink
 #
 #        Fix issue where it won't import mavexpression:
-#        $ sed -i 's/select, mavexpression/select, pymavlink.mavexpression/' \
-#              mavlink/pymavlink/mavutil.py
+#        $ sed -i 's/select, mavexpression/select, pymavlink.mavexpression/'  mavutil.py
 #
-#        Add this mavlink/ directory to PYTHONPATH (see export statement below)
-#        So that 'import pymavlink' will work, which is included in this mavlink/
-#        directory.
+#        $ python3 setup.py install --user
 #
 #   Optional, recreate the mavlink.py file included in this repository:
 #        $ python3 -m pymavlink.tools.mavgen -o mavlink --lang Python \
@@ -43,15 +41,11 @@
 #
 
 # Path to find APM's sim_vehicle.sh script
-APM="$HOME/Documents/Github/ThermalSoaring/ardupilot"
-
-# Path so we can import pymavlink for communication
-MAVLINK="$HOME/Documents/Github/ThermalSoaring/mavlink"
-export PYTHONPATH="$PYTHONPATH:$MAVLINK"
+APM="../ardupilot"
 
 # Configuration
 ProxyPort=9999
-Script=learning.py
+Script="soaring_mavlink.py"
 
 # Kill/interrupt all the processes we started on Ctrl+C
 intList=()
