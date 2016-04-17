@@ -1,4 +1,5 @@
 simulation.csv
+mav.tlog*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -1,5 +1,7 @@
 #!/bin/bash
 #
+# Connect our thermal soaring program to APM:Plane in crrcsim, a simulator
+#
 # Requirements:
 #   crrcsim-apm    https://github.com/tridge/crrcsim-ardupilot
 #   ardupilot      https://github.com/diydrones/ardupilot
