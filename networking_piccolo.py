@@ -2,6 +2,8 @@
 # Connecting to the C++/Python interface for the Piccolo autopilot
 #
 
+import json
+import select
 import socket
 import threading
 
@@ -76,6 +78,7 @@ class NetworkingThreadReceive(threading.Thread):
 
         while not self.exiting:
             # See if we're ready to read data
+            # http://stackoverflow.com/a/1716173
             inputready, outputready, exceptready = \
                 select.select([self.socket],[],[],300)
 
@@ -126,6 +129,7 @@ class NetworkingThreadReceive(threading.Thread):
 #
 def networkingProcess(server, port, manager, debug):
     # Connect to server
+    # https://docs.python.org/3/howto/sockets.html
     print("Connecting to ", server, ":", port, sep="")
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect((server, port))
