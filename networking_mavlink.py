@@ -28,28 +28,34 @@ class NetworkingThreadSend(threading.Thread):
             # Send the new waypoint and orbit
             #
             # See: http://www.colorado.edu/recuv/2015/05/25/mavlink-protocol-waypoints
-            lat = c["lat"]
-            lon = c["lon"]
-            alt = c["alt"]
-            radius = c["radius"]
+            lat = [c["lat"], c["lat"]]
+            lon = [c["lon"], c["lon"]]
+            alt = [c["alt"], c["alt"]]
+            radius = [c["radius"], c["radius"]]
 
             wp = mavwp.MAVWPLoader()
             seq = 1
             frame = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
-            wp.add(mavutil.mavlink.MAVLink_mission_item_message(self.master.target_system,
-                self.master.target_component,
-                seq,
-                frame,
-                mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                0, 0, 0, radius, 0, 0,
-                lat, lon, alt))
+
+            for i in range(0, len(lat)):
+                wp.add(mavutil.mavlink.MAVLink_mission_item_message(self.master.target_system,
+                    self.master.target_component,
+                    seq,
+                    frame,
+                    mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                    0, 0, 0, radius[i], 0, 0,
+                    lat[i], lon[i], alt[i]))
+                seq += 1
+
             self.master.waypoint_clear_all_send()
             self.master.waypoint_count_send(wp.count())
-            msg = self.master.recv_match(type=['MISSION_REQUEST'],blocking=True)
-            self.master.mav.send(wp.wp(msg.seq))
 
-            if self.debug:
-                print('Sending waypoint {0}'.format(msg.seq))
+            for i in range(wp.count()):
+                msg = self.master.recv_match(type=['MISSION_REQUEST'],blocking=True)
+                self.master.mav.send(wp.wp(msg.seq))
+
+                if self.debug:
+                    print('Sent waypoint {0}'.format(msg.seq))
 
     def stop(self):
         self.exiting = True
@@ -196,7 +202,7 @@ class NetworkingThreadReceive(threading.Thread):
 
             # TODO presently just assuming every time we get GPS data is
             # a good time to say we've received new data
-            if msgType == "LOCAL_POSITION_NED":
+            if msgType == "GLOBAL_POSITION_INT":
                 receivedData = {
                     "type": "data",
                     "date": str(datetime.now()),
@@ -258,14 +264,9 @@ def networkingProcess(server, port, manager, debug):
             master.target_component,
             mavlink.MAV_DATA_STREAM_ALL, rate, 1)
 
-    # TODO don't do this?
     # Wait till armed
     print("Waiting for motors to be armed")
     master.motors_armed_wait()
-
-    # Set to auto so we take off
-    print("Setting mode to auto")
-    master.set_mode_auto()
 
     # Start send/recieve threads
     receive = NetworkingThreadReceive(master, manager, debug)

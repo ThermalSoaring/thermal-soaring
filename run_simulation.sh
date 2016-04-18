@@ -106,7 +106,12 @@ In the simulator,
     Press 'r' to reset
 
 Once the simulator starts, this window will become a MAVProxy
-shell. Type 'arm throttle' to start flying.
+shell. Type the following to start flying after you get some
+messages in the Console about EXF2 IMU0.
+
+    wp load ArduPlane-Missions/CMAC-toff-loop.txt
+    arm throttle
+    mode auto
 
 EOF
 waitline
