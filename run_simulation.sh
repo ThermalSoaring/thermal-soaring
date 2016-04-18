@@ -46,8 +46,8 @@
 APM="../ardupilot"
 
 # Configuration
-ProxyPort=9999
-Script="soaring_mavlink.py"
+ProxyPort=2050
+Script="soaring.py"
 
 # Kill/interrupt all the processes we started on Ctrl+C
 intList=()
@@ -84,7 +84,7 @@ run_autopilot () {
 # Run our code which connects to the MAVProxy ground station started by the
 # autopilot script
 run_ourcode() {
-    xterm -e "python3 \"$Script\"" &
+    xterm -e "python3 \"$Script\" -d" &
     killList+=("$!")
 }
 

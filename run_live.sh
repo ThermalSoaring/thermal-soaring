@@ -10,8 +10,8 @@
 APM="../ardupilot"
 
 # Configuration
-ProxyPort=9999
-Script="soaring_mavlink.py"
+ProxyPort=2050
+Script="soaring.py"
 
 # Kill/interrupt all the processes we started on Ctrl+C
 intList=()
