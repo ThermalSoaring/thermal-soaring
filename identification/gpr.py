@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.gaussian_process import GaussianProcess
 
-from data import boundsFromPath
+from identification.data import boundsFromPath
 
 # Make the plots look prettier
 import seaborn as sns

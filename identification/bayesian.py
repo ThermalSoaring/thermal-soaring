@@ -12,7 +12,7 @@ from scipy.stats import kde
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
-from data import boundsFromPath
+from identification.data import boundsFromPath
 
 # For reproducibility
 #random.seed(126)

@@ -7,9 +7,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from bayesian import BayesianLearning
-from gpr import GPRParams, ThermalGPRPlot
-from data import windowSubset, shrinkSamples, readData, \
+from identification.bayesian import BayesianLearning
+from identification.gpr import GPRParams, ThermalGPRPlot
+from identification.data import windowSubset, shrinkSamples, readData, \
     compareXYLatLong, xyToLatLong
 
 #

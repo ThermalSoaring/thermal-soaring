@@ -1,11 +1,15 @@
+#
+# Run the thermal soaring procesing of data received from the autopilots
+#
+
 import json
 import numpy as np
 from time import sleep
 from datetime import datetime
 import matplotlib.pyplot as plt
 
-from data import xyToLatLong, readNetworkData, shrinkSamples
-from gpr import GPRParams, ThermalGPR, ThermalGPRPlot
+from identification.data import xyToLatLong, readNetworkData, shrinkSamples
+from identification.gpr import GPRParams, ThermalGPR, ThermalGPRPlot
 
 #
 # Work with data and commands
@@ -94,7 +98,8 @@ def processingProcess(manager, debug):
             continue
 
         # Note: 375 at 25 Hz is 15 seconds
-        if len(networkData) < 375:
+        #if len(networkData) < 375:
+        if len(networkData) < 100:
             if debug:
                 print("Only have", len(networkData))
             sleep(1)
@@ -103,62 +108,58 @@ def processingProcess(manager, debug):
         data, lat_0 = readNetworkData(networkData)
 
         # Take only every n'th point
-        data = shrinkSamples(data, 5)
-
         if len(data) > 100:
+            data = shrinkSamples(data, 5)
+
+        # Run GPR
+        if debug:
+            print("Running GPR")
+
+        # Data to run GPR
+        path = np.array(data[['x', 'y']])
+        measurements = np.array(data[['energy']])
+        gprParams = GPRParams(theta0=1e-2, thetaL=1e-10, thetaU=1e10,
+                nugget=1, random_start=10)
+
+        try:
             # Run GPR
             if debug:
-                print("Running GPR")
+                x, y, prediction, uncertainty = ThermalGPRPlot(fig, path,
+                        measurements, gprParams)
 
-            # Data to run GPR
-            path = np.array(data[['x', 'y']])
-            measurements = np.array(data[['energy']])
-            gprParams = GPRParams(theta0=1e-2, thetaL=1e-10, thetaU=1e10,
-                    nugget=1, random_start=10)
+                # Update the plot
+                plt.ion()
+                plt.draw()
+                plt.waitforbuttonpress(timeout=0.001)
+            else:
+                x, y, prediction, uncertainty = ThermalGPR(path, measurements,
+                        gprParams)
 
-            try:
-                # Run GPR
-                if debug:
-                    x, y, prediction, uncertainty = ThermalGPRPlot(fig, path,
-                            measurements, gprParams)
+            # Convert X/Y to Lat/Long
+            lat, lon = xyToLatLong(x, y, lat_0)
 
-                    # Update the plot
-                    plt.ion()
-                    plt.draw()
-                    plt.waitforbuttonpress(timeout=0.001)
-                else:
-                    x, y, prediction, uncertainty = ThermalGPR(path, measurements,
-                            gprParams)
+            # Calculate average altitude from last 45 seconds
+            s = 0
+            for d in networkData:
+                s += d["alt"]
+            avgAlt = s / len(networkData)
 
-                # Convert X/Y to Lat/Long
-                lat, lon = xyToLatLong(x, y, lat_0)
-
-                # Calculate average altitude from last 45 seconds
-                s = 0
-                for d in networkData:
-                    s += d["alt"]
-                avgAlt = s / len(networkData)
-
-                # Send a new orbit and radius
-                command = json.dumps({
-                    "type": "command",
-                    "date": str(datetime.now()),
-                    "lat": lat,
-                    "lon": lon,
-                    "alt": avgAlt,
-                    "radius": 20.0, # Can only be in 10 m intervals
-                    "prediction": float(prediction),
-                    "uncertainty": float(uncertainty)
-                    })
-                if debug:
-                    print("Sending:", command)
-                manager.addCommand(command)
-
-            except ValueError:
-                print("Error: ValueError, couldn't run GPR")
-        else:
+            # Send a new orbit and radius
+            command = json.dumps({
+                "type": "command",
+                "date": str(datetime.now()),
+                "lat": lat,
+                "lon": lon,
+                "alt": avgAlt,
+                "radius": 20.0, # Can only be in 10 m intervals
+                "prediction": float(prediction),
+                "uncertainty": float(uncertainty)
+                })
             if debug:
-                print("Skipping GPR. Only", len(data),
-                    "samples at unique positions")
+                print("Sending:", command)
+            manager.addCommand(command)
+
+        except ValueError:
+            print("Error: ValueError, couldn't run GPR")
 
     print("Exiting processingProcess")

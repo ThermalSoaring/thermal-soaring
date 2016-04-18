@@ -93,6 +93,27 @@ class NetworkingThreadReceive(threading.Thread):
         self.vx = 0.0
         self.vy = 0.0
         self.vz = 0.0
+        self.xacc = 0.0
+        self.yacc = 0.0
+        self.zacc = 0.0
+        self.xgyro = 0.0
+        self.ygyro = 0.0
+        self.zgyro = 0.0
+        self.xmag = 0.0
+        self.ymag = 0.0
+        self.zmag = 0.0
+        self.local_x = 0.0
+        self.local_y = 0.0
+        self.local_z = 0.0
+        self.local_vx = 0.0
+        self.local_vy = 0.0
+        self.local_vz = 0.0
+        self.ahrs_roll = 0.0
+        self.ahrs_pitch = 0.0
+        self.ahrs_yaw = 0.0
+        self.ahrs_lat = 0.0
+        self.ahrs_lon = 0.0
+        self.ahrs_alt = 0.0
 
     # Receive incoming mavlink messages from the groundstation
     def run(self):
@@ -134,6 +155,16 @@ class NetworkingThreadReceive(threading.Thread):
                 self.pressure_abs = msgData['press_abs']
                 self.pressure_diff = msgData['press_diff']
                 self.temperature = msgData['temperature']
+            elif msgType == "SCALED_IMU2":
+                self.xacc = msgData['xacc']
+                self.yacc = msgData['yacc']
+                self.zacc = msgData['zacc']
+                self.xgyro = msgData['xgyro']
+                self.ygyro = msgData['ygyro']
+                self.zgyro = msgData['zgyro']
+                self.xmag = msgData['xmag']
+                self.ymag = msgData['ymag']
+                self.zmag = msgData['zmag']
             elif msgType == "SYS_STATUS":
                 self.battery = msgData['battery_remaining']
             elif msgType == "WIND":
@@ -146,12 +177,26 @@ class NetworkingThreadReceive(threading.Thread):
                 self.vx = msgData['vx']
                 self.vy = msgData['vy']
                 self.vz = msgData['vz']
+            elif msgType == "LOCAL_POSITION_NED":
+                self.local_x = msgData['x']
+                self.local_y = msgData['y']
+                self.local_z = msgData['z']
+                self.local_vx = msgData['vx']
+                self.local_vy = msgData['vy']
+                self.local_vz = msgData['vz']
+            elif msgType == "AHRS3":
+                self.ahrs_roll = msgData['roll']
+                self.ahrs_pitch = msgData['pitch']
+                self.ahrs_yaw = msgData['yaw']
+                self.ahrs_lat = msgData['lat']
+                self.ahrs_lon = msgData['lng']
+                self.ahrs_alt = msgData['altitude']
             #else:
             #    print(msg)
 
             # TODO presently just assuming every time we get GPS data is
             # a good time to say we've received new data
-            if msgType == "GLOBAL_POSITION_INT":
+            if msgType == "LOCAL_POSITION_NED":
                 receivedData = {
                     "type": "data",
                     "date": str(datetime.now()),
@@ -159,13 +204,13 @@ class NetworkingThreadReceive(threading.Thread):
                     "lat": self.lat,
                     "lon": self.lon,
                     "alt": self.alt,
-                    "velDown": self.vz,
-                    "IAS": 0.0,
-                    "TAS": 0.0,
-                    "RPS": 0.0,
-                    "accelZ": 0.0,
-                    "energy": self.vz, # TODO fix this
-                    "avgEnergy": 0
+                    "velDown": self.local_vz,
+                    "IAS": self.airspeed,
+                    "TAS": self.airspeed,
+                    "RPS": 0,
+                    "accelZ": self.zacc,
+                    "energy": self.local_vz, # TODO fix this
+                    "avgEnergy": 0 # TODO and this
                 }
                 self.manager.addData(receivedData)
 
@@ -224,10 +269,10 @@ def networkingProcess(server, port, manager, debug):
 
     # Start send/recieve threads
     receive = NetworkingThreadReceive(master, manager, debug)
-    #send = NetworkingThreadSend(master, manager, debug)
+    send = NetworkingThreadSend(master, manager, debug)
     receive.start()
-    #send.start()
+    send.start()
     receive.join()
-    #send.join()
+    send.join()
 
     print("Exiting networkingProcess")

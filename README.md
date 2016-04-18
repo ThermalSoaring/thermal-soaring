@@ -18,7 +18,7 @@ Piccolo is not open-source).
 
 **Note:** see *docs/* for more documentation.
 
-# Pixhawk / APM Plane
+## Pixhawk / APM Plane
 To connect to the USB telemetry radio for live flight:
 
     ./run_live.sh
@@ -27,7 +27,7 @@ or, to run APM Plane in a crrcsim simulation:
 
     ./run_simulation.sh
 
-# Piccolo
+## Piccolo
 To connect to the C++ code that connects to the Piccolo for both simulation
 and for live flight:
 
