@@ -86,14 +86,18 @@ connect and run the GPR thermal identification:
 
     git clone https://github.com/ThermalSoaring/thermal-soaring
     cd thermal-soaring
-    ./run_simulation.sh
 
-To connect with the Visual Studio project, change the arguments when running
-the program in Visual Studio.  Right click on the project --> Properties -->
-Configuration Properties --> Debugging --> Command Arguments: -a gpr
+Next, in the Visual Studio project, change the arguments when running the
+program. Right click on the project --> Properties --> Configuration Properties
+--> Debugging --> Command Arguments: -a gpr. This will then listen on a port
+that the Python code can connect to.
+
+Connect the Python code to the Visual Studio project by running:
+
+    python soaring.py -p -d
 
 Not for use with the simulator, but if you want to see the notebook code in a
-browser:
+browser in the *bayesian-learning* git repository:
 
     cd bayesian-learning
     jupyter notebook
@@ -104,7 +108,7 @@ required to run the GPR and Bayesian parameter estimation comparisons. If you
 are interested in that:
 
     pip install --process-dependency-links git+https://github.com/pymc-devs/pymc3
-    cd bayesian-learning/integrated
+    cd thermal-soaring/identification
     python offline.py
 
 Note: Theano will be slow (it'll print a warning about this when you run it)
