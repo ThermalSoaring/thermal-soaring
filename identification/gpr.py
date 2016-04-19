@@ -77,7 +77,7 @@ class GPRParams:
 # Points - how much to divide each axis of the bounding box into, predicting
 #     at each of these points
 #
-def GPR(path, measurements, gprParams, extent=50, points=200):
+def GPR(path, measurements, gprParams, extent=20, points=100):
     # Compute bounds based on measurements
     pos_min_x, pos_max_x, pos_min_y, pos_max_y = boundsFromPath(path)
 

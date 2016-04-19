@@ -47,10 +47,10 @@ if __name__ == "__main__":
     # Max length of data to keep
     maxLength = 750
 
-    with SyncManager() as manager:
+    with SyncManager() as syncManager:
         # Data to be passed back and forth between processes
-        data = manager.deque(maxlen=maxLength)
-        commands = manager.deque(maxlen=maxLength)
+        data = syncManager.deque(maxlen=maxLength)
+        commands = syncManager.deque(maxlen=maxLength)
 
         # When we add another command to send to the autopilot, wake up the
         # sending thread to send this new data. This is to keep the sending

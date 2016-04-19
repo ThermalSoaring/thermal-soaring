@@ -11,10 +11,12 @@ from pymavlink import mavutil, mavwp
 # Thread to send commands through network connection
 #
 class NetworkingThreadSend(threading.Thread):
-    def __init__(self, master, manager, debug):
+    def __init__(self, master, manager, wp, wp_loading, debug):
         threading.Thread.__init__(self)
         self.master = master
         self.manager = manager
+#        self.wp = wp
+#        self.wp_loading = wp_loading
         self.debug = debug
 
         # Used to tell when to exit this thread
@@ -28,34 +30,59 @@ class NetworkingThreadSend(threading.Thread):
             # Send the new waypoint and orbit
             #
             # See: http://www.colorado.edu/recuv/2015/05/25/mavlink-protocol-waypoints
-            lat = [c["lat"], c["lat"]]
-            lon = [c["lon"], c["lon"]]
-            alt = [c["alt"], c["alt"]]
-            radius = [c["radius"], c["radius"]]
-
-            wp = mavwp.MAVWPLoader()
-            seq = 1
+            lat = c["lat"]*1e-7 # TODO is this right?
+            lon = c["lon"]*1e-7
+            alt = c["alt"]
+            radius = c["radius"]
             frame = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
 
-            for i in range(0, len(lat)):
-                wp.add(mavutil.mavlink.MAVLink_mission_item_message(self.master.target_system,
+            self.master.mav.mission_item_send(
+                    self.master.target_system,
                     self.master.target_component,
-                    seq,
+                    0,
                     frame,
                     mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                    0, 0, 0, radius[i], 0, 0,
-                    lat[i], lon[i], alt[i]))
-                seq += 1
+                    2, 0, 0, radius, 0, 0,
+                    lat, lon, alt)
+            self.master.set_mode('GUIDED')
 
-            self.master.waypoint_clear_all_send()
-            self.master.waypoint_count_send(wp.count())
-
-            for i in range(wp.count()):
-                msg = self.master.recv_match(type=['MISSION_REQUEST'],blocking=True)
-                self.master.mav.send(wp.wp(msg.seq))
-
-                if self.debug:
-                    print('Sent waypoint {0}'.format(msg.seq))
+#            points = [[lat,lon,alt,radius]]
+#
+#            # Remove all points in our saved copy except for the home point
+#            home = self.wp.wp(0)
+#            self.wp.clear()
+#
+#            # Assuming we found a home point...
+#            if home:
+#                self.wp.add(home)
+#            else:
+#                print("Warning: no home point, not sending waypoint!")
+#                continue
+#
+#            # We'll be sending the next waypoint
+#            seq = home.seq+1
+#
+#            # Add the new points
+#            for lat, lon, alt, radius in points:
+#                self.wp.add(mavutil.mavlink.MAVLink_mission_item_message(
+#                    self.master.target_system,
+#                    self.master.target_component,
+#                    seq,
+#                    frame,
+#                    mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+#                    0, 0, 0, radius, 0, 0,
+#                    lat, lon, alt))
+#                seq += 1
+#
+#            # Clear all the waypoints on the autopilot
+#            self.master.waypoint_clear_all_send()
+#            self.master.waypoint_count_send(self.wp.count())
+#
+#            # Tell the other thread to send our new flight plan
+#            self.wp_loading.set()
+#
+#            if self.debug:
+#                print("New mission is", self.wp.count(), "points")
 
     def stop(self):
         self.exiting = True
@@ -64,10 +91,12 @@ class NetworkingThreadSend(threading.Thread):
 # Thread to receive data
 #
 class NetworkingThreadReceive(threading.Thread):
-    def __init__(self, master, manager, debug):
+    def __init__(self, master, manager, wp, wp_loading, debug):
         threading.Thread.__init__(self)
         self.master = master
         self.manager = manager
+#        self.wp = wp
+#        self.wp_loading = wp_loading
         self.debug = debug
 
         # Used to tell when to exit this thread
@@ -197,6 +226,40 @@ class NetworkingThreadReceive(threading.Thread):
                 self.ahrs_lat = msgData['lat']
                 self.ahrs_lon = msgData['lng']
                 self.ahrs_alt = msgData['altitude']
+#            elif msgType in ["MISSION_REQUEST", "WAYPOINT_REQUEST"]:
+#                # In combination with the sending thread above, when we want to
+#                # send some waypoints, we tell the autopilot to request a
+#                # certain number of them in that thread. Then, here we actually
+#                # send them as it asks for them.
+#                if self.wp_loading.is_set():
+#                    if msg.seq > self.wp.count():
+#                        print("Request for bad waypoint")
+#                        continue
+#
+#                    self.master.mav.send(self.wp.wp(msg.seq))
+#
+#                    if self.debug:
+#                        print('Sending waypoint {0}'.format(msg.seq))
+#
+#                    # We just sent the last waypoint
+#                    if msg.seq == self.wp.count() - 1:
+#                        self.wp_loading.clear()
+#
+#                        if self.debug:
+#                            print("Sent last waypoint, switching to guided mode")
+#                            self.master.set_mode_guided()
+#
+#                            # TODO this is a bad idea, but it makes it use the
+#                            # new flight plan in the simulator
+#                            #print("Switching to manual and back to auto")
+#                            #self.master.set_mode_manual()
+#                            #self.master.set_mode_auto()
+#
+#            elif msgType in ["MISSION_ITEM", "WAYPOINT"]:
+#                # Save the waypoints that are already loaded. We'll get some of
+#                # these messages since we request all waypoints initially.
+#                self.wp.add(msg)
+
             #else:
             #    print(msg)
 
@@ -245,6 +308,9 @@ def networkingProcess(server, port, manager, debug):
     # Connect to server
     print("Connecting to ", server, ":", port, sep="")
 
+    # Manage waypoints
+    wp = mavwp.MAVWPLoader()
+
     # Connect to MAVProxy ground station
     master = mavutil.mavlink_connection(server + ":" + str(port))
 
@@ -255,22 +321,33 @@ def networkingProcess(server, port, manager, debug):
     # Do we need to get the parameters?
     #master.param_fetch_all()
 
+    # Shared loading waypoints variable between threads since we request to
+    # send in one and then send in the receive thread. We're using this rather
+    # than a boolean, since this will be referenced rather than copied into
+    # each thread, and rather than a condition since the condition doesn't let
+    # you check without waiting. This lets you wait or check.
+    wp_loading = threading.Event()
+
+    # Wait till armed
+    print("Waiting for motors to be armed")
+    master.motors_armed_wait()
+
     # Set that we want to receive data
     print("Requesting data")
-    # TODO doesn't get at the correct rate?
     rate = 25 # Hz
     master.mav.request_data_stream_send(
             master.target_system,
             master.target_component,
             mavlink.MAV_DATA_STREAM_ALL, rate, 1)
 
-    # Wait till armed
-    print("Waiting for motors to be armed")
-    master.motors_armed_wait()
+    # Request the home point
+    master.waypoint_request_send(0)
 
     # Start send/recieve threads
-    receive = NetworkingThreadReceive(master, manager, debug)
-    send = NetworkingThreadSend(master, manager, debug)
+    receive = NetworkingThreadReceive(master, manager, wp,
+            wp_loading, debug)
+    send = NetworkingThreadSend(master, manager, wp,
+            wp_loading, debug)
     receive.start()
     send.start()
     receive.join()
