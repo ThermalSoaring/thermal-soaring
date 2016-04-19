@@ -26,8 +26,8 @@ class NetworkingThreadSend(threading.Thread):
             c = json.loads(self.manager.getCommandWait())
 
             # Send the new waypoint and orbit
-            lat = c["lat"]*1e-7 # TODO is this right? And, if so, why?
-            lon = c["lon"]*1e-7
+            lat = c["lat"]
+            lon = c["lon"]
             alt = c["alt"]
             radius = c["radius"]
             frame = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
@@ -196,8 +196,8 @@ class NetworkingThreadReceive(threading.Thread):
                     "type": "data",
                     "date": str(datetime.now()),
                     "time": self.timestamp,
-                    "lat": self.lat,
-                    "lon": self.lon,
+                    "lat": self.lat*1e-7,
+                    "lon": self.lon*1e-7,
                     "alt": self.alt,
                     "velDown": self.local_vz,
                     "IAS": self.airspeed,
