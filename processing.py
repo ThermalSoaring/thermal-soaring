@@ -97,9 +97,8 @@ def processingProcess(manager, debug):
             sleep(1)
             continue
 
-        # Note: 375 at 25 Hz is 15 seconds
-        #if len(networkData) < 375:
-        if len(networkData) < 100:
+        # Note: 250 at 25 Hz is 10 seconds
+        if len(networkData) < 250:
             if debug:
                 print("Only have", len(networkData))
             sleep(1)
