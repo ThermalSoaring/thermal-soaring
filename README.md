@@ -31,4 +31,4 @@ or, to run APM Plane in a crrcsim simulation:
 To connect to the C++ code that connects to the Piccolo for both simulation
 and for live flight:
 
-    python3 soaring.py -d
+    python3 soaring.py -p -d
