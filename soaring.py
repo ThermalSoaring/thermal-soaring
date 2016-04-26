@@ -6,7 +6,7 @@ import argparse
 from collections import deque
 import multiprocessing
 from multiprocessing.managers import SyncManager
-from processing import NetworkData, processingProcess
+from processing import processingProcess
 
 # For debugging
 # Trigger with: Tracer()()
@@ -18,6 +18,64 @@ from IPython.core.debugger import Tracer
 # http://stackoverflow.com/a/27345949
 #
 SyncManager.register('deque', deque)
+
+#
+# Work with data and commands
+#
+class NetworkData:
+    def __init__(self, data, commands, cond):
+        self.data = data
+        self.commands = commands
+        self.commandCondition = cond
+
+    # Add data/commands
+    def addData(self, d):
+        self.data.append(d)
+
+    def addCommand(self, c):
+        with self.commandCondition:
+            self.commands.append(c)
+            self.commandCondition.notify()
+
+    # Get one and pop off that we've used this data
+    def getData(self):
+        # Must copy since AutoProxy[deque] doesn't allow indexing
+        c = self.data.copy()
+
+        if c:
+            d = c[0]
+            self.data.popleft()
+            return d
+
+        return None
+
+    # Just get *all* the data, so we can just keep on running the thermal
+    # identification on the last so many data points
+    def getAllData(self):
+        return self.data.copy()
+
+    # Get one and pop off that we've sent this command
+    def getCommand(self):
+        c = self.commands.copy()
+
+        if c:
+            d = c[0]
+            self.commands.popleft()
+            return d
+
+        return None
+
+    # If we have a command available, return it. Otherwise, wait for one to be
+    # added, and then return that
+    def getCommandWait(self):
+        with self.commandCondition:
+            while True:
+                c = self.getCommand()
+
+                if c:
+                    return c
+
+                self.commandCondition.wait()
 
 if __name__ == "__main__":
     # Parse command-line arguments

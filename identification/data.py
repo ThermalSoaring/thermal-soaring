@@ -95,12 +95,13 @@ def readData(df, startAtZero=False, normalize=False):
     # Get the data we care about and convert Lat-Long to X-Y
     #for index, row in df[['Latitude','Longitude','VelDown']].iterrows():
     for index, row in df.iterrows():
+        time = row['SystemTime']*1e-3 # s
         lat = row['Latitude'] #*np.pi/180
         long = row['Longitude'] #*np.pi/180
         vel = row['VelDown']
         x, y = latLongToXY(lat, long, lat_0)
-        data = data.append(pd.DataFrame([[x, y, vel, lat, long]], index=[index],
-                                        columns=['x','y','VelDown',
+        data = data.append(pd.DataFrame([[time, x, y, vel, lat, long]], index=[index],
+                                        columns=['time','x','y','VelDown',
                                                  'Latitude', 'Longitude']))
 
     # Try to shrink the range of X-Y values if desired
@@ -115,7 +116,8 @@ def readData(df, startAtZero=False, normalize=False):
         data[['x']] /= maxX-minX
         data[['y']] /= maxY-minY
 
-    # For GPR (x,y) must be unique
+    # For GPR (time,x,y) must be unique
+    #data = data.drop_duplicates(subset=['time','x','y'])
     data = data.drop_duplicates(subset=['x','y'])
 
     return data, lat_0
@@ -135,15 +137,17 @@ def readNetworkData(networkData):
 
     # Get the data we care about and convert Lat-Long to X-Y
     for index, row in enumerate(networkData):
+        time = row['time']
         lat = row['lat']
         long = row['lon']
         energy = row['energy']
         x, y = latLongToXY(lat, long, lat_0)
-        data = data.append(pd.DataFrame([[x, y, energy, lat, long]], index=[index],
-                                        columns=['x','y','energy',
+        data = data.append(pd.DataFrame([[time, x, y, energy, lat, long]], index=[index],
+                                        columns=['time', 'x','y','energy',
                                                  'Latitude', 'Longitude']))
 
-    # For GPR (x,y) must be unique
+    # For GPR (time,x,y) must be unique
+    #data = data.drop_duplicates(subset=['time','x','y'])
     data = data.drop_duplicates(subset=['x','y'])
 
     return data, lat_0

@@ -70,6 +70,108 @@ class GPRParams:
             self.theta0, self.thetaL, self.thetaU, self.nugget, self.random_start)
 
 #
+# Custom correlation model
+#
+# Based on scikit-learn's squared exponential function:
+#  /usr/lib/python3.5/site-packages/sklearn/gaussian_process/correlation_models.py
+#
+# Implementing the separable squared-exponential function from Lawrance's
+# thesis, see page 145:
+#  http://db.acfr.usyd.edu.au/download.php/Lawrance2011_Thesis.pdf?id=2615
+#
+# Note that on page 145 there is not a negative in the time portion of the
+# separable equation, but on page 147 there is. Thus, I decided that there
+# likely should be the negative on page 145 as well.
+#
+def time_squared_exponential(theta, d):
+    """
+    Seperable time-dependent squared exponential:
+
+        l_x, l_t, d_x, d_t --> r(l_x, l_t, d_x, d_t) =
+                   n
+            exp(  sum - (dx_i)^2 / ( 2 * l_x ^ 2 ) )
+                 i = 1
+
+          * exp(  - dt^2 / ( 2 * l_t ^ 2 ) )
+
+    where l_x is the spatial length scale and
+          l_t is a temporal time scale
+
+    However, DACE uses theta rather than l_x, so we note the following:
+        l_x = 1/sqrt(2*theta_x) => theta_x = 1/(2 * l_x ^ 2)
+        l_t = 1/sqrt(2*theta_t) => theta_t = 1/(2 * l_t ^ 2)
+
+    Thus, we will actually use:
+
+        theta_x, theta_t, dx, dt --> r(theta_x, theta_t, dx, dt) =
+                   n-1
+            exp(  sum - theta_x * (dx_i)^2 )
+                 i = 1
+
+          * exp(  - theta_t * dt^2 )
+
+    Compared with the normal squared-exponential:
+                                          n
+        theta, d --> r(theta, d) = exp(  sum  - theta_i * (d_i)^2 )
+                                        i = 1
+
+    Parameters
+    ----------
+    l_x : array_like
+        An array with shape 1 (isotropic) or n (anisotropic) giving the
+        autocorrelation parameter(s). For position.
+
+    l_t : array_like
+        An array with shape 1 (isotropic) or n (anisotropic) giving the
+        autocorrelation parameter(s). For time.
+
+    d_x : array_like
+        An array with shape (n_eval, n_features) giving the componentwise
+        distances between locations x and x' at which the correlation model
+        should be evaluated.
+
+    d_t : array_like
+        An array with shape (n_eval, n_features) giving the componentwise
+        distances between times t and t' at which the correlation model
+        should be evaluated.
+
+    Returns
+    -------
+    r : array_like
+        An array with shape (n_eval, ) containing the values of the
+        autocorrelation model.
+    """
+
+    theta = np.asarray(theta, dtype=np.float)
+    d = np.asarray(d, dtype=np.float)
+
+    print("Theta.shape:", theta.shape)
+    print("d.shape:", d.shape)
+
+    #assert theta.shape[1] == 2, "theta must have 2 columns, theta_x and theta_t"
+    assert d.shape[1] == 3, "d must have 2 columns: x, y, and t"
+
+    theta_x = theta #theta[:,0] # for x, y
+    #theta_t = theta[:,1] # for t
+    theta_t = np.asarray([1], dtype=np.float) # for t, TODO change this
+    dx = d[:,:d.shape[1]-1] # all but last column, i.e.: x, y
+    dt = d[:,d.shape[1]-1] # just the last column, i.e.: t
+
+    if dx.ndim > 1:
+        n_features = dx.shape[1]
+    else:
+        n_features = 1
+
+    if theta_x.size == 1:
+        return np.exp(-theta_x[0] * np.sum(dx ** 2, axis=1)) * \
+            np.exp(-theta_t[0] * dt ** 2)
+    elif theta_x.size != n_features:
+        raise ValueError("Length of theta_x must be 1 or %s" % n_features)
+    else:
+        return np.exp(-np.sum(theta_x.reshape(1, n_features) * dx ** 2, axis=1)) * \
+            np.exp(-theta_t.reshape(1, n_features) * dt ** 2)
+
+#
 # Gaussian Process Regression to learn thermals
 #
 # Extent - predict over bounding box of measurements given but extend this
@@ -77,8 +179,9 @@ class GPRParams:
 # Points - how much to divide each axis of the bounding box into, predicting
 #     at each of these points
 #
-def GPR(path, measurements, gprParams, extent=50, points=200):
+def GPR(timepos, measurements, gprParams, extent, points):
     # Compute bounds based on measurements
+    path = timepos[:,1:timepos.shape[1]] # get [x,y] from [t,x,y]
     pos_min_x, pos_max_x, pos_min_y, pos_max_y = boundsFromPath(path)
 
     # Extend the prediction out from the measurements given
@@ -89,12 +192,18 @@ def GPR(path, measurements, gprParams, extent=50, points=200):
 
     # Generate all the points we want to output at
     # See: http://stackoverflow.com/a/32208788
+    #grid_x, grid_y, grid_time = np.meshgrid(
+    #    np.arange(pos_min_x, pos_max_x, (pos_max_x-pos_min_x)/points),
+    #    np.arange(pos_min_y, pos_max_y, (pos_max_y-pos_min_y)/points),
+    #    np.zeros(points))
     grid_x, grid_y = np.meshgrid(
         np.arange(pos_min_x, pos_max_x, (pos_max_x-pos_min_x)/points),
         np.arange(pos_min_y, pos_max_y, (pos_max_y-pos_min_y)/points))
     grid = np.vstack((grid_x.flatten(), grid_y.flatten())).T
+    #grid_time = np.vstack((grid_x.flatten(), grid_y.flatten(), grid_time.flatten())).T
 
     gp = GaussianProcess(corr='squared_exponential',
+    #gp = GaussianProcess(corr=time_squared_exponential,
                          theta0=gprParams.theta0,
                          thetaL=gprParams.thetaL,
                          thetaU=gprParams.thetaU,
@@ -102,10 +211,12 @@ def GPR(path, measurements, gprParams, extent=50, points=200):
                          random_start=gprParams.random_start)
 
     # Regression, fit to data using Maximum Likelihood Estimation of the parameters
+    #gp.fit(timepos, measurements)
     gp.fit(path, measurements)
 
     # Prediction over our grid
     prediction, MSE = gp.predict(grid, eval_MSE=True)
+    #prediction, MSE = gp.predict(grid_time, eval_MSE=True)
     sigma = np.sqrt(MSE)
 
     return (grid, grid_x, grid_y), prediction, sigma
@@ -124,10 +235,10 @@ def GPRtoThermal(grid, prediction, sigma):
 #
 # Get thermal from GPR without plotting
 #
-def ThermalGPR(path, measurements, gprParams):
+def ThermalGPR(timepos, measurements, gprParams, extent=50, points=200):
     # Run GPR
-    (grid, grid_x, grid_y), prediction, sigma = GPR(path, measurements,
-            gprParams)
+    (grid, grid_x, grid_y), prediction, sigma = GPR(timepos, measurements,
+            gprParams, extent, points)
 
     # Get thermal
     return GPRtoThermal(grid, prediction, sigma)
@@ -135,11 +246,13 @@ def ThermalGPR(path, measurements, gprParams):
 #
 # Get thermal from GPR with plotting
 #
-def ThermalGPRPlot(fig, path, measurements, gprParams,
+def ThermalGPRPlot(fig, timepos, measurements, gprParams, extent=20, points=100,
         field=None):
 
-    (grid, grid_x, grid_y), prediction, sigma = GPR(path, measurements,
-            gprParams)
+    path = timepos[:,1:timepos.shape[1]] # get [x,y] from [t,x,y]
+
+    (grid, grid_x, grid_y), prediction, sigma = GPR(timepos, measurements,
+            gprParams, extent, points)
 
     if field:
         Z = np.zeros(grid.shape)

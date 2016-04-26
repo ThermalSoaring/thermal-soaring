@@ -12,64 +12,6 @@ from identification.data import xyToLatLong, readNetworkData, shrinkSamples
 from identification.gpr import GPRParams, ThermalGPR, ThermalGPRPlot
 
 #
-# Work with data and commands
-#
-class NetworkData:
-    def __init__(self, data, commands, cond):
-        self.data = data
-        self.commands = commands
-        self.commandCondition = cond
-
-    # Add data/commands
-    def addData(self, d):
-        self.data.append(d)
-
-    def addCommand(self, c):
-        with self.commandCondition:
-            self.commands.append(c)
-            self.commandCondition.notify()
-
-    # Get one and pop off that we've used this data
-    def getData(self):
-        # Must copy since AutoProxy[deque] doesn't allow indexing
-        c = self.data.copy()
-
-        if c:
-            d = c[0]
-            self.data.popleft()
-            return d
-
-        return None
-
-    # Just get *all* the data, so we can just keep on running the thermal
-    # identification on the last so many data points
-    def getAllData(self):
-        return self.data.copy()
-
-    # Get one and pop off that we've sent this command
-    def getCommand(self):
-        c = self.commands.copy()
-
-        if c:
-            d = c[0]
-            self.commands.popleft()
-            return d
-
-        return None
-
-    # If we have a command available, return it. Otherwise, wait for one to be
-    # added, and then return that
-    def getCommandWait(self):
-        with self.commandCondition:
-            while True:
-                c = self.getCommand()
-
-                if c:
-                    return c
-
-                self.commandCondition.wait()
-
-#
 # Processing thread, where we do thermal identification
 #
 def processingProcess(manager, debug):
@@ -97,8 +39,8 @@ def processingProcess(manager, debug):
             sleep(1)
             continue
 
-        # Note: 250 at 25 Hz is 10 seconds
-        if len(networkData) < 250:
+        # We need some data to work with
+        if len(networkData) < 100:
             if debug:
                 print("Only have", len(networkData))
             sleep(1)
@@ -106,24 +48,24 @@ def processingProcess(manager, debug):
 
         data, lat_0 = readNetworkData(networkData)
 
-        # Take only every n'th point
+        # Try to get about 100 points
         if len(data) > 100:
-            data = shrinkSamples(data, 5)
+            data = shrinkSamples(data, int(len(data)/100))
 
         # Run GPR
         if debug:
             print("Running GPR")
 
         # Data to run GPR
-        path = np.array(data[['x', 'y']])
+        timepos = np.array(data[['time', 'x', 'y']])
         measurements = np.array(data[['energy']])
-        gprParams = GPRParams(theta0=1e-2, thetaL=1e-10, thetaU=1e10,
-                nugget=1, random_start=10)
+        gprParams = GPRParams(theta0=1e-1, thetaL=1e-5, thetaU=1e5,
+                nugget=0.1, random_start=1)
 
         try:
             # Run GPR
             if debug:
-                x, y, prediction, uncertainty = ThermalGPRPlot(fig, path,
+                x, y, prediction, uncertainty = ThermalGPRPlot(fig, timepos,
                         measurements, gprParams)
 
                 # Update the plot
@@ -131,32 +73,50 @@ def processingProcess(manager, debug):
                 plt.draw()
                 plt.waitforbuttonpress(timeout=0.001)
             else:
-                x, y, prediction, uncertainty = ThermalGPR(path, measurements,
+                x, y, prediction, uncertainty = ThermalGPR(timepos, measurements,
                         gprParams)
 
-            # Convert X/Y to Lat/Long
-            lat, lon = xyToLatLong(x, y, lat_0)
+            # Go back to the normal flight plan if we're not predicting with
+            # 95% confidence that we have an upwards vertical velocity
+            if prediction-1.9600*uncertainty <= 0:
+                command = json.dumps({
+                    "type": "command",
+                    "date": str(datetime.now()),
+                    "lat": 0,
+                    "lon": 0,
+                    "alt": 0,
+                    "radius": 0,
+                    "prediction": float(0),
+                    "uncertainty": float(-1) # Magic value meaning we're not in a thermal
+                    })
 
-            # Calculate average altitude from last 45 seconds
-            s = 0
-            for d in networkData:
-                s += d["alt"]
-            avgAlt = s / len(networkData)
+            # If we do think we're in a thermal, send real data
+            else:
+                # Convert X/Y to Lat/Long
+                lat, lon = xyToLatLong(x, y, lat_0)
 
-            # Send a new orbit and radius
-            command = json.dumps({
-                "type": "command",
-                "date": str(datetime.now()),
-                "lat": lat,
-                "lon": lon,
-                "alt": avgAlt,
-                "radius": 20.0, # Can only be in 10 m intervals
-                "prediction": float(prediction),
-                "uncertainty": float(uncertainty)
-                })
+                # Calculate average altitude from last 45 seconds
+                s = 0
+                for d in networkData:
+                    s += d["alt"]
+                avgAlt = s / len(networkData)
+
+                # Send a new orbit and radius
+                command = json.dumps({
+                    "type": "command",
+                    "date": str(datetime.now()),
+                    "lat": lat,
+                    "lon": lon,
+                    "alt": avgAlt,
+                    "radius": 5.0, # Can only be in 10 m intervals?
+                    "prediction": float(prediction),
+                    "uncertainty": float(uncertainty)
+                    })
+
+            manager.addCommand(command)
+
             if debug:
                 print("Sending:", command)
-            manager.addCommand(command)
 
         except ValueError:
             print("Error: ValueError, couldn't run GPR")
