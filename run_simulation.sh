@@ -31,10 +31,14 @@
 #        $ sudo pacman -S wxpython opencv
 #        $ git clone https://github.com/Dronecode/MAVProxy mavproxy
 #        $ cd mavproxy
-#        $ python2 setup.py build install --user
+#        $ python3 setup.py build install --user
+#
+#   Note: OpenCV 3 removed the cv2.cv API, so this breaks all the map
+#   functionality if you use version 3. You could always connect via Mission
+#   Planner.
 #
 #   ardupilot
-#        $ git clone https://github.com/diydrones/ardupilot
+#        $ git clone https://github.com/diydrones/ardupilot -b ArduPlane-release
 #        Set the APM variable in this script to point to where you cloned this
 #
 #   crrcsim-apm

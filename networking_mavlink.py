@@ -4,8 +4,10 @@
 import json
 import mavlink
 import threading
+from math import pi
+from time import sleep, time
 from datetime import datetime
-from pymavlink import mavutil, mavwp
+from pymavlink import mavutil, mavwp, mavparm
 
 #
 # Thread to send commands through network connection
@@ -228,6 +230,63 @@ class NetworkingThreadReceive(threading.Thread):
         self.exiting = True
 
 #
+# Allow us to cut the throttle while in GUIDED mode. This is an odd way of
+# doing it, but I didn't find another way in the simulator. On the actual
+# plane, we could potentially always keep manual control of the throttle
+# through wiring it directly from the receiver to the ESC (though this may
+# mess with the auto or guided modes, not sure), but that doesn't work in
+# the simulator.
+#
+# "What to do on a fence breach... If set to 3 then the plane enters guided
+# mode but the pilot retains manual throttle control."
+#
+# http://ardupilot.org/plane/docs/parameters.html
+#
+def cutThrottle(master):
+    # Disable the fence
+    master.mav.command_long_send(
+        master.target_system,
+        master.target_component,
+        mavlink.MAV_CMD_DO_FENCE_ENABLE, 0,
+        False, 0, 0, 0, 0, 0, 0)
+
+    # Initially set action back to do nothing
+    params = mavparm.MAVParmDict()
+    params.mavset(master, b'FENCE_ACTION', mavlink.FENCE_ACTION_NONE)
+
+    # Cut the throttle by setting the fence to be at the North pole
+    fenceloader = mavwp.MAVFenceLoader()
+    fenceloader.target_system = master.target_system
+    fenceloader.target_component = master.target_component
+
+    points = [[90,0],[90,1],
+              [89,0],[89,1]]
+
+    for p in points:
+        fenceloader.add_latlon(p[0], p[1])
+
+    fenceloader.reindex()
+
+    # Send the fence
+    params.mavset(master, b'FENCE_TOTAL', fenceloader.count())
+
+    for i in range(fenceloader.count()):
+        print("Sending point", i)
+        master.mav.send(fenceloader.point(i))
+
+    # Set the action so we'll be outside the fence and the throttle will be
+    # under manual control
+    params.mavset(master, b'FENCE_ACTION',
+            mavlink.FENCE_ACTION_GUIDED_THR_PASS)
+
+    # Enable the fence
+    master.mav.command_long_send(
+        master.target_system,
+        master.target_component,
+        mavlink.MAV_CMD_DO_FENCE_ENABLE, 0,
+        True, 0, 0, 0, 0, 0, 0)
+
+#
 # The process that communciates with mavlink
 #
 def networkingProcess(server, port, manager, debug):
@@ -261,6 +320,13 @@ def networkingProcess(server, port, manager, debug):
     send = NetworkingThreadSend(master, manager, debug)
     receive.start()
     send.start()
+
+    sleep(2)
+    if debug:
+        print("Setting FENCE_ACTION to GuidedModeThrPass")
+    cutThrottle(master)
+
+    # Wait for threads to finish
     receive.join()
     send.join()
 
