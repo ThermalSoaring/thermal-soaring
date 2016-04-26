@@ -85,6 +85,7 @@ class NetworkingThreadReceive(threading.Thread):
         self.pitchspeed = 0.0
         self.yawspeed = 0.0
         self.airspeed = 0.0
+        self.airspeedLast = 0.0
         self.groundspeed = 0.0
         self.heading = 0.0
         self.throttle = 0.0
@@ -155,6 +156,7 @@ class NetworkingThreadReceive(threading.Thread):
                 self.pitchspeed = msgData['pitchspeed'] # rad/s
                 self.yawspeed = msgData['yawspeed'] # rad/s
             elif msgType == "VFR_HUD":
+                self.airspeedLast = self.airspeed # Save previous value
                 self.airspeed = msgData['airspeed'] # m/s
                 self.groundspeed = msgData['groundspeed'] # m/s
                 self.heading = msgData['heading'] # 0..360, 0 = north
@@ -215,6 +217,29 @@ class NetworkingThreadReceive(threading.Thread):
             #else:
             #    print(msg)
 
+            #
+            # Energy equation
+            # Note to Travis: this is probably wrong
+            #
+            # Prop data based on T15 Electric
+            currentVelDown = self.local_vz
+            currentAccelZ = self.zacc
+            currentRPS = self.throttle # This is definitely wrong, but how do we get motor RPM?
+            currentTAS = self.airspeed
+            currentIAS = self.airspeed
+            diffIAS = self.airspeed - self.airspeedLast # This is also probably wrong
+            g = 9.8
+            a_n = -0.0176
+            b_n = 0.3782
+            c_n = -2.4993
+            rho_inf = 1.11164
+            d_prop = 0.4572
+            C_T = 0.506
+            mg = 1.11164
+            currentEnergy = -currentVelDown + currentIAS*diffIAS/g \
+                - (a_n*currentTAS**2 + b_n*currentTAS + c_n)*(-currentAccelZ/g)**1.5 \
+                - (rho_inf*currentRPS**2 * d_prop**2 * C_T)/mg
+
             # TODO presently just assuming every time we get GPS data is
             # a good time to say we've received new data
             if msgType == "GLOBAL_POSITION_INT":
@@ -230,8 +255,8 @@ class NetworkingThreadReceive(threading.Thread):
                     "TAS": self.airspeed,
                     "RPS": 0,
                     "accelZ": self.zacc,
-                    "energy": -self.local_vz, # TODO fix this
-                    "avgEnergy": 0 # TODO and this
+                    "energy": currentEnergy,
+                    "avgEnergy": 0 # TODO fix this
                 }
                 self.manager.addData(receivedData)
 
