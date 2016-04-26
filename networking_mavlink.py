@@ -75,7 +75,9 @@ class NetworkingThreadReceive(threading.Thread):
         self.groundspeed = 0.0
         self.heading = 0.0
         self.throttle = 0.0
+        self.climb = 0.0
         self.alt = 0.0
+        self.relative_alt = 0.0
         self.timestamp = 0.0
         self.timeboot = 0.0
         self.pressure_abs = 0.0
@@ -133,47 +135,51 @@ class NetworkingThreadReceive(threading.Thread):
                 #    sys.stdout.write(msg.data)
                 #    sys.stdout.flush()
             elif msgType == "ATTITUDE":
-                self.roll = msgData['roll']
-                self.pitch = msgData['pitch']
-                self.yaw = msgData['yaw']
-                self.rollspeed = msgData['rollspeed']
-                self.pitchspeed = msgData['pitchspeed']
-                self.yawspeed = msgData['yawspeed']
+                self.roll = msgData['roll'] # rad, -pi..+pi
+                self.pitch = msgData['pitch'] # rad, -pi..+pi
+                self.yaw = msgData['yaw'] # rad, -pi..+pi
+                self.rollspeed = msgData['rollspeed'] # rad/s
+                self.pitchspeed = msgData['pitchspeed'] # rad/s
+                self.yawspeed = msgData['yawspeed'] # rad/s
             elif msgType == "VFR_HUD":
-                self.airspeed = msgData['airspeed']
-                self.groundspeed = msgData['groundspeed']
-                self.heading = msgData['heading']
-                self.throttle = msgData['throttle']
-                self.alt = msgData['alt']
+                self.airspeed = msgData['airspeed'] # m/s
+                self.groundspeed = msgData['groundspeed'] # m/s
+                self.heading = msgData['heading'] # 0..360, 0 = north
+                self.throttle = msgData['throttle'] # 0 to 100, integer percentage
+                self.alt = msgData['alt'] # m (MSL)
+                self.climb = msgData['climb'] # m/s
             elif msgType == "SYSTEM_TIME":
-                self.timestamp = msgData['time_unix_usec']
-                self.timeboot = msgData['time_boot_ms']
+                self.timestamp = msgData['time_unix_usec'] # microseconds since UNIX epoch
+                self.timeboot = msgData['time_boot_ms'] # milliseconds since boot
             elif msgType == "SCALED_PRESSURE":
-                self.pressure_abs = msgData['press_abs']
-                self.pressure_diff = msgData['press_diff']
-                self.temperature = msgData['temperature']
+                self.pressure_abs = msgData['press_abs'] # hectopascal
+                self.pressure_diff = msgData['press_diff'] # differential pressure, hectopascal
+                self.temperature = msgData['temperature'] # 0.01 degrees celsius
             elif msgType == "SCALED_IMU2":
-                self.xacc = msgData['xacc']
-                self.yacc = msgData['yacc']
-                self.zacc = msgData['zacc']
-                self.xgyro = msgData['xgyro']
-                self.ygyro = msgData['ygyro']
-                self.zgyro = msgData['zgyro']
-                self.xmag = msgData['xmag']
-                self.ymag = msgData['ymag']
-                self.zmag = msgData['zmag']
+                self.xacc = msgData['xacc'] # mg
+                self.yacc = msgData['yacc'] # mg
+                self.zacc = msgData['zacc'] # mg
+                self.xgyro = msgData['xgyro'] # millirad/sec
+                self.ygyro = msgData['ygyro'] # millirad/sec
+                self.zgyro = msgData['zgyro'] # millirad/sec
+                self.xmag = msgData['xmag'] # milli tesla
+                self.ymag = msgData['ymag'] # milli tesla
+                self.zmag = msgData['zmag'] # milli tesla
             elif msgType == "SYS_STATUS":
-                self.battery = msgData['battery_remaining']
+                self.battery = msgData['battery_remaining'] # 0 - 100, -1 if not being estimated
             elif msgType == "WIND":
-                self.wind_direction = msgData['direction']
-                self.wind_speed = msgData['speed']
-                self.wind_speed_z = msgData['speed_z']
+                self.wind_direction = msgData['direction'] # degrees, direction wind is coming from
+                self.wind_speed = msgData['speed'] # m/s
+                self.wind_speed_z = msgData['speed_z'] # m/s
             elif msgType == "GLOBAL_POSITION_INT":
-                self.lat = msgData['lat']
-                self.lon = msgData['lon']
-                self.vx = msgData['vx']
-                self.vy = msgData['vy']
-                self.vz = msgData['vz']
+                self.lat = msgData['lat']*1e-7 # degrees
+                self.lon = msgData['lon']*1e-7 # degrees
+                self.alt = msgData['alt']*1e-3 # m
+                self.relative_alt = msgData['relative_alt']*1e-3 # m
+                self.vx = msgData['vx']*1e-3 # m/s
+                self.vy = msgData['vy']*1e-3 # m/s
+                self.vz = msgData['vz']*1e-3 # m/s
+                self.heading = msgData['hdg']*1e-3 # yaw angle, degrees, 0.0..359.99, UINT16_MAX if unknown
             elif msgType == "LOCAL_POSITION_NED":
                 self.local_x = msgData['x']
                 self.local_y = msgData['y']
@@ -182,12 +188,13 @@ class NetworkingThreadReceive(threading.Thread):
                 self.local_vy = msgData['vy']
                 self.local_vz = msgData['vz']
             elif msgType == "AHRS3":
-                self.ahrs_roll = msgData['roll']
-                self.ahrs_pitch = msgData['pitch']
-                self.ahrs_yaw = msgData['yaw']
-                self.ahrs_lat = msgData['lat']
-                self.ahrs_lon = msgData['lng']
-                self.ahrs_alt = msgData['altitude']
+                # TODO Research data? Is this available on the Pixhawk? How do we get EKF results?
+                self.ahrs_roll = msgData['roll'] # rad
+                self.ahrs_pitch = msgData['pitch'] # rad
+                self.ahrs_yaw = msgData['yaw'] # rad
+                self.ahrs_lat = msgData['lat']*1e-7
+                self.ahrs_lon = msgData['lng']*1e-7
+                self.ahrs_alt = msgData['altitude'] # MSL
             #else:
             #    print(msg)
 
@@ -198,8 +205,8 @@ class NetworkingThreadReceive(threading.Thread):
                     "type": "data",
                     "date": str(datetime.now()),
                     "time": self.timestamp,
-                    "lat": self.lat*1e-7,
-                    "lon": self.lon*1e-7,
+                    "lat": self.lat,
+                    "lon": self.lon,
                     "alt": self.alt,
                     "velDown": self.local_vz,
                     "IAS": self.airspeed,
