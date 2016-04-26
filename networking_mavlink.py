@@ -222,76 +222,8 @@ class NetworkingThreadReceive(threading.Thread):
                 if self.debug and i%125 == 0:
                     print(i, "Received:", receivedData)
 
-    def __repr__(self):
-        return("Bat %d AirV %f Alt: %f Lat: %f Lon: %f Vz: %f WindV: %f WindVZ: %f Temp: %f" % (
-            self.battery, self.airspeed, self.alt, self.lat, self.lon,
-            self.vz, self.wind_speed, self.wind_speed_z, self.temperature))
-
-    def header(self):
-        return("Roll, Pitch, Yaw, RollSpeed, PitchSpeed, YawSpeed, AirSpeed, GroundSpeed, Heading, Throttle, Alt, Timestamp, Timeboot, PressureAbs, PressureDiff, Temperature, Battery, WindDirection, WindSpeed, WindSpeedZ, Lat, Lon, Vx, Vy, Vz")
-
-    def __str__(self):
-        return(', '.join([str(i) for i in [self.roll, self.pitch, self.yaw, self.rollspeed, self.pitchspeed, self.yawspeed, self.airspeed, self.groundspeed, self.heading, self.throttle, self.alt, self.timestamp, self.timeboot, self.pressure_abs, self.pressure_diff, self.temperature, self.battery, self.wind_direction, self.wind_speed, self.wind_speed_z, self.lat, self.lon, self.vx, self.vy, self.vz]]))
-
     def stop(self):
         self.exiting = True
-
-#
-# Allow us to cut the throttle while in GUIDED mode. This is an odd way of
-# doing it, but I didn't find another way in the simulator. On the actual
-# plane, we could potentially always keep manual control of the throttle
-# through wiring it directly from the receiver to the ESC (though this may
-# mess with the auto or guided modes, not sure), but that doesn't work in
-# the simulator.
-#
-# "What to do on a fence breach... If set to 3 then the plane enters guided
-# mode but the pilot retains manual throttle control."
-#
-# http://ardupilot.org/plane/docs/parameters.html
-#
-def cutThrottle(master):
-    # Disable the fence
-    master.mav.command_long_send(
-        master.target_system,
-        master.target_component,
-        mavlink.MAV_CMD_DO_FENCE_ENABLE, 0,
-        False, 0, 0, 0, 0, 0, 0)
-
-    # Initially set action back to do nothing
-    params = mavparm.MAVParmDict()
-    params.mavset(master, b'FENCE_ACTION', mavlink.FENCE_ACTION_NONE)
-
-    # Cut the throttle by setting the fence to be at the North pole
-    fenceloader = mavwp.MAVFenceLoader()
-    fenceloader.target_system = master.target_system
-    fenceloader.target_component = master.target_component
-
-    points = [[90,0],[90,1],
-              [89,0],[89,1]]
-
-    for p in points:
-        fenceloader.add_latlon(p[0], p[1])
-
-    fenceloader.reindex()
-
-    # Send the fence
-    params.mavset(master, b'FENCE_TOTAL', fenceloader.count())
-
-    for i in range(fenceloader.count()):
-        print("Sending point", i)
-        master.mav.send(fenceloader.point(i))
-
-    # Set the action so we'll be outside the fence and the throttle will be
-    # under manual control
-    params.mavset(master, b'FENCE_ACTION',
-            mavlink.FENCE_ACTION_GUIDED_THR_PASS)
-
-    # Enable the fence
-    master.mav.command_long_send(
-        master.target_system,
-        master.target_component,
-        mavlink.MAV_CMD_DO_FENCE_ENABLE, 0,
-        True, 0, 0, 0, 0, 0, 0)
 
 #
 # The process that communciates with mavlink
@@ -306,9 +238,6 @@ def networkingProcess(server, port, manager, debug):
     # Wait for a heartbeat so we know the target system IDs
     print("Waiting for heartbeat")
     master.wait_heartbeat()
-
-    # Do we need to get the parameters?
-    #master.param_fetch_all()
 
     # Wait till armed
     print("Waiting for motors to be armed")
@@ -327,13 +256,6 @@ def networkingProcess(server, port, manager, debug):
     send = NetworkingThreadSend(master, manager, debug)
     receive.start()
     send.start()
-
-    sleep(2)
-    if debug:
-        print("Setting FENCE_ACTION to GuidedModeThrPass")
-    cutThrottle(master)
-
-    # Wait for threads to finish
     receive.join()
     send.join()
 
