@@ -9,14 +9,20 @@ from time import sleep, time
 from datetime import datetime
 from pymavlink import mavutil, mavwp, mavparm
 
+# Start at 600 m above home point, stop if we drop down to 200 m
+startAlt = 200
+stopAlt = 100
+turnRadius = 3
+
 #
 # Thread to send commands through network connection
 #
 class NetworkingThreadSend(threading.Thread):
-    def __init__(self, master, manager, debug):
+    def __init__(self, master, manager, wp, debug):
         threading.Thread.__init__(self)
         self.master = master
         self.manager = manager
+        self.wp = wp
         self.debug = debug
 
         # Used to tell when to exit this thread
@@ -30,30 +36,46 @@ class NetworkingThreadSend(threading.Thread):
             # Send the new waypoint and orbit
             lat = c["lat"]*180/pi
             lon = c["lon"]*180/pi
-            alt = c["alt"]
-            radius = c["radius"]
+            #alt = c["alt"]
+            alt = startAlt
+            #radius = c["radius"]
+            radius = turnRadius
 
-            # At the moment uncertainty = -1 means we're not in a thermal, so
-            # continue with the normal flight plan
-            if c["uncertainty"] != -1:
-                frame = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
+            # Only enable when we're above the home point by more than stopAlt
+            home = self.wp.wp(0)
 
-                # Send a new waypoint to fly to
-                self.master.mav.mission_item_send(
-                        self.master.target_system,
-                        self.master.target_component,
-                        0,
-                        frame,
-                        mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                        2, 0, 0, radius, 0, 0,
-                        lat, lon, alt)
+            if home:
+                AGL = c["alt"] - home.z
 
-                # Set us to be in the mode to actually fly to it rather than
-                # continuing on the current mission / flight plan
-                self.master.set_mode('GUIDED')
-            else:
-                # Continue on normal flight plan
-                self.master.set_mode_auto()
+                # At the moment uncertainty = -1 means we're not in a thermal, so
+                # continue with the normal flight plan
+                #
+                # Or, if we command below our stop altitude, also continue with the
+                # normal flight plan
+                if c["uncertainty"] != -1 and AGL > stopAlt:
+                    frame = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
+
+                    # Send a new waypoint to fly to
+                    self.master.mav.mission_item_send(
+                            self.master.target_system,
+                            self.master.target_component,
+                            0,
+                            frame,
+                            mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                            2, 0, 0, radius, 0, 0,
+                            lat, lon, alt)
+
+                    # Set us to be in the mode to actually fly to it rather than
+                    # continuing on the current mission / flight plan
+                    self.master.set_mode('GUIDED')
+
+                    print("Orbiting, Prediction:", c["prediction"], "Uncertainty:",
+                            c["uncertainty"], "AGL:", AGL)
+                else:
+                    print("Skipping, Uncertainty:", c["uncertainty"],
+                            "AGL:", AGL, "StopAlt:", stopAlt)
+                    # Continue on normal flight plan
+                    self.master.set_mode('AUTO')
 
     def stop(self):
         self.exiting = True
@@ -62,7 +84,7 @@ class NetworkingThreadSend(threading.Thread):
 # Thread to receive data
 #
 class NetworkingThreadReceive(threading.Thread):
-    def __init__(self, master, manager, debug):
+    def __init__(self, master, manager, wp, debug):
         threading.Thread.__init__(self)
         self.master = master
         self.manager = manager
@@ -71,8 +93,8 @@ class NetworkingThreadReceive(threading.Thread):
         # Record if we've cut the throttle
         self.cutThrottle = False
 
-        # Manage waypoints, so we can get the home point
-        self.wp = mavwp.MAVWPLoader()
+        # Waypoints
+        self.wp = wp
 
         # Used to tell when to exit this thread
         self.exiting = False
@@ -255,28 +277,34 @@ class NetworkingThreadReceive(threading.Thread):
                     "TAS": self.airspeed,
                     "RPS": 0,
                     "accelZ": self.zacc,
-                    "energy": currentEnergy,
+                    #"energy": currentEnergy,
+                    "energy": -self.local_vz,
                     "avgEnergy": 0 # TODO fix this
                 }
-                self.manager.addData(receivedData)
 
-                # Cut the throttle if we're above 200 meters but don't reenable
-                # it until we drop to 100 meters
+                # Cut the throttle if we're above startAlt meters but don't reenable
+                # it until we drop to stopAlt meters
                 home = self.wp.wp(0)
 
                 if home:
                     AGL = self.alt - home.z
 
-                    if not self.cutThrottle and AGL > 200:
+                    # TODO Until we get the currentEnergy thing working, the
+                    # throttle messes up the GPR, so only use points where
+                    # after we have cut the engine
+                    if self.cutThrottle and AGL > stopAlt:
+                        self.manager.addData(receivedData)
+
+                    if not self.cutThrottle and AGL > startAlt:
                         self.cutThrottle = True
-                        print("Alt:", self.alt, "Home:", home.z,
-                                "cutting throttle")
+                        print("Alt:", self.alt, "Home:", home.z, "StartAlt:",
+                                startAlt, "cutting throttle")
                         setThrottle(self.master, 0)
-                    elif self.cutThrottle and AGL < 100:
+                    elif self.cutThrottle and AGL < stopAlt:
                         self.cutThrottle = False
                         setThrottle(self.master, 100)
-                        print("Alt:", self.alt, "Home:", home.z,
-                                "uncutting throttle")
+                        print("Alt:", self.alt, "Home:", home.z, "StopAlt:",
+                                stopAlt, "uncutting throttle")
                 else:
                     print("Warning: no home point, will not adjust throttle")
 
@@ -315,11 +343,14 @@ def networkingProcess(server, port, manager, debug):
 
     # Set that we want to receive data
     print("Requesting data")
-    rate = 15 # Hz
+    rate = 25 # Hz
     master.mav.request_data_stream_send(
             master.target_system,
             master.target_component,
             mavlink.MAV_DATA_STREAM_ALL, rate, 1)
+
+    # Manage waypoints, so we can get the home point
+    wp = mavwp.MAVWPLoader()
 
     #
     # Set glider settings
@@ -331,14 +362,15 @@ def networkingProcess(server, port, manager, debug):
     #
     params = mavparm.MAVParmDict()
     params.mavset(master, b'TECS_SPDWEIGHT', 2.0)
+    params.mavset(master, b'WP_LOITER_RAD', turnRadius)
 
     # Request the home point, so we can roughly know how high above our
     # starting point we are
     master.waypoint_request_send(0)
 
     # Start send/recieve threads
-    receive = NetworkingThreadReceive(master, manager, debug)
-    send = NetworkingThreadSend(master, manager, debug)
+    receive = NetworkingThreadReceive(master, manager, wp, debug)
+    send = NetworkingThreadSend(master, manager, wp, debug)
     receive.start()
     send.start()
     receive.join()

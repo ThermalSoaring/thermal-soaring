@@ -235,7 +235,7 @@ def GPRtoThermal(grid, prediction, sigma):
 #
 # Get thermal from GPR without plotting
 #
-def ThermalGPR(timepos, measurements, gprParams, extent=50, points=200):
+def ThermalGPR(timepos, measurements, gprParams, extent=10, points=50):
     # Run GPR
     (grid, grid_x, grid_y), prediction, sigma = GPR(timepos, measurements,
             gprParams, extent, points)
@@ -246,8 +246,8 @@ def ThermalGPR(timepos, measurements, gprParams, extent=50, points=200):
 #
 # Get thermal from GPR with plotting
 #
-def ThermalGPRPlot(fig, timepos, measurements, gprParams, extent=20, points=100,
-        field=None):
+def ThermalGPRPlot(fig, timepos, measurements, gprParams, extent=10, points=50,
+        fast=False, field=None):
 
     path = timepos[:,1:timepos.shape[1]] # get [x,y] from [t,x,y]
 
@@ -274,35 +274,47 @@ def ThermalGPRPlot(fig, timepos, measurements, gprParams, extent=20, points=100,
 
     # Reshape from 1D to 2D so we can plot these
     pred_surface = prediction.reshape(grid_x.shape)
-    sigma_surface = sigma.reshape(grid_x.shape)
 
     # The mean
     ax.plot_surface(grid_x, grid_y, pred_surface, label='Prediction',
                     rstride=1, cstride=1, cmap=cm.jet,
                     alpha=0.5, linewidth=0, antialiased=True)
 
-    # 95% Confidence Interval
-    lower = np.add(pred_surface, -1.9600*sigma_surface)
-    upper = np.add(pred_surface, 1.9600*sigma_surface)
+    if fast:
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+        ax.get_xaxis().set_ticks([])
+        ax.get_yaxis().set_ticks([])
 
-    ax.plot_surface(grid_x, grid_y, lower,
-                    label='Lower 95% Confidence Interval',
-                    rstride=1, cstride=1, cmap=cm.bone,
-                    alpha=0.25, linewidth=0, antialiased=True)
-    ax.plot_surface(grid_x, grid_y, upper,
-                    label='Upper 95% Confidence Interval',
-                    rstride=1, cstride=1, cmap=cm.coolwarm,
-                    alpha=0.25, linewidth=0, antialiased=True)
+    if not fast:
+        # Reshape from 1D to 2D so we can plot these
+        sigma_surface = sigma.reshape(grid_x.shape)
 
-    # Contours so we can see how it compares with the path
-    # See: http://matplotlib.org/examples/mplot3d/contour3d_demo3.html
-    cset = ax.contour(grid_x, grid_y, pred_surface, zdir='z', offset=ax.get_zlim()[0], cmap=cm.coolwarm)
-    cset = ax.contour(grid_x, grid_y, lower, zdir='x', offset=ax.get_xlim()[0], cmap=cm.bone)
-    cset = ax.contour(grid_x, grid_y, lower, zdir='y', offset=ax.get_ylim()[1], cmap=cm.bone)
-    cset = ax.contour(grid_x, grid_y, pred_surface, zdir='x', offset=ax.get_xlim()[0], cmap=cm.jet)
-    cset = ax.contour(grid_x, grid_y, pred_surface, zdir='y', offset=ax.get_ylim()[1], cmap=cm.jet)
-    cset = ax.contour(grid_x, grid_y, upper, zdir='x', offset=ax.get_xlim()[0], cmap=cm.coolwarm)
-    cset = ax.contour(grid_x, grid_y, upper, zdir='y', offset=ax.get_ylim()[1], cmap=cm.coolwarm)
+        # 95% Confidence Interval
+        lower = np.add(pred_surface, -1.9600*sigma_surface)
+
+        upper = np.add(pred_surface, 1.9600*sigma_surface)
+
+        ax.plot_surface(grid_x, grid_y, lower,
+                        label='Lower 95% Confidence Interval',
+                        rstride=1, cstride=1, cmap=cm.bone,
+                        alpha=0.25, linewidth=0, antialiased=True)
+
+        ax.plot_surface(grid_x, grid_y, upper,
+                        label='Upper 95% Confidence Interval',
+                        rstride=1, cstride=1, cmap=cm.coolwarm,
+                        alpha=0.25, linewidth=0, antialiased=True)
+
+    if not fast:
+        # Contours so we can see how it compares with the path
+        # See: http://matplotlib.org/examples/mplot3d/contour3d_demo3.html
+        cset = ax.contour(grid_x, grid_y, pred_surface, zdir='z', offset=ax.get_zlim()[0], cmap=cm.coolwarm)
+        cset = ax.contour(grid_x, grid_y, lower, zdir='x', offset=ax.get_xlim()[0], cmap=cm.bone)
+        cset = ax.contour(grid_x, grid_y, lower, zdir='y', offset=ax.get_ylim()[1], cmap=cm.bone)
+        cset = ax.contour(grid_x, grid_y, pred_surface, zdir='x', offset=ax.get_xlim()[0], cmap=cm.jet)
+        cset = ax.contour(grid_x, grid_y, pred_surface, zdir='y', offset=ax.get_ylim()[1], cmap=cm.jet)
+        cset = ax.contour(grid_x, grid_y, upper, zdir='x', offset=ax.get_xlim()[0], cmap=cm.coolwarm)
+        cset = ax.contour(grid_x, grid_y, upper, zdir='y', offset=ax.get_ylim()[1], cmap=cm.coolwarm)
 
     # Now for the actual values
     if field:

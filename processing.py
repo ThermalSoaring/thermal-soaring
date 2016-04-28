@@ -40,7 +40,7 @@ def processingProcess(manager, debug):
             continue
 
         # We need some data to work with
-        if len(networkData) < 100:
+        if len(networkData) < 10:
             if debug:
                 print("Only have", len(networkData))
             sleep(1)
@@ -48,25 +48,25 @@ def processingProcess(manager, debug):
 
         data, lat_0 = readNetworkData(networkData)
 
-        # Try to get about 100 points
+        # Try to get about 50 points
         if len(data) > 100:
-            data = shrinkSamples(data, int(len(data)/100))
+            #data = shrinkSamples(data, int(len(data)/50))
+            data = data.iloc[len(data)-100:len(data), :]
 
         # Run GPR
-        if debug:
-            print("Running GPR")
+        print("Running GPR with", len(data), "points")
 
         # Data to run GPR
         timepos = np.array(data[['time', 'x', 'y']])
         measurements = np.array(data[['energy']])
-        gprParams = GPRParams(theta0=1e-1, thetaL=1e-5, thetaU=1e5,
-                nugget=0.1, random_start=1)
+        gprParams = GPRParams(theta0=1e-2, thetaL=1e-10, thetaU=1e10,
+                nugget=1, random_start=10)
 
         try:
             # Run GPR
             if debug:
                 x, y, prediction, uncertainty = ThermalGPRPlot(fig, timepos,
-                        measurements, gprParams)
+                        measurements, gprParams, fast=True)
 
                 # Update the plot
                 plt.ion()
@@ -78,7 +78,10 @@ def processingProcess(manager, debug):
 
             # Go back to the normal flight plan if we're not predicting with
             # 95% confidence that we have an upwards vertical velocity
-            if prediction-1.9600*uncertainty <= 0:
+            #
+            # Or, if it's imaginary
+            #if not np.isreal(prediction) or prediction-1.9600*uncertainty <= 0:
+            if not np.isreal(prediction) or prediction-1.9600/2*uncertainty <= 0.5:
                 command = json.dumps({
                     "type": "command",
                     "date": str(datetime.now()),
@@ -89,6 +92,10 @@ def processingProcess(manager, debug):
                     "prediction": float(0),
                     "uncertainty": float(-1) # Magic value meaning we're not in a thermal
                     })
+
+                # TODO see if the prediction is real!!!???
+                if debug:
+                    print("Prediction:", prediction)
 
             # If we do think we're in a thermal, send real data
             else:
@@ -108,7 +115,7 @@ def processingProcess(manager, debug):
                     "lat": lat,
                     "lon": lon,
                     "alt": avgAlt,
-                    "radius": 5.0, # Can only be in 10 m intervals?
+                    "radius": 10.0, # Can only be in 10 m intervals?
                     "prediction": float(prediction),
                     "uncertainty": float(uncertainty)
                     })

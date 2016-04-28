@@ -104,7 +104,7 @@ if [[ $1 != "-f" ]]; then
 cat <<EOF
 In the simulator,
     Options -> Launch -> Load Preset: Motor
-    Options -> Airplane -> Select airplane: Sport
+    Options -> Airplane -> Select airplane: Flexifly XLM
     Options -> Wind, Thermals -> adjust as desired
     Press 't' to show thermals
     Press 'r' to reset
