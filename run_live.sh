@@ -3,7 +3,7 @@
 # Connect our thermal soaring program to the real APM:Plane autopilot over the
 # USB telemetry radio
 #
-# Setup: look at run_simulation.sh
+# Setup: look at docs/PixhawkSimulation.md
 #
 
 # Path to find APM's sim_vehicle.sh script

@@ -77,7 +77,8 @@ def processingProcess(manager, debug):
                         gprParams)
 
             # Go back to the normal flight plan if we're not predicting with
-            # 95% confidence that we have an upwards vertical velocity
+            # 97.5% confidence that we have an upwards vertical velocity
+            # (or if /2, then 83.6% confidence)
             #
             # Or, if it's imaginary
             #if not np.isreal(prediction) or prediction-1.9600*uncertainty <= 0:
